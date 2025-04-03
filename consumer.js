@@ -2,16 +2,16 @@ const amqp = require('amqplib');
 
 const RABBITMQ_URL = 'amqp://ale:ale123@ec2-54-167-194-141.compute-1.amazonaws.com:5672';
 const QUEUE_NAME = 'imagenes';
-const API_IA_URL = 'http://localhost:3000/compare'; 
+const API_IA_URL = 'http://localhost:3000/compare';
 
-async function sendToIA(base64Data) {
+async function sendToIA(base64Data, token) {
   try {
     const response = await fetch(API_IA_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ base64: base64Data })
+      body: JSON.stringify({ base64: base64Data, token: token })
     });
 
     if (!response.ok) {
@@ -29,17 +29,19 @@ async function startConsumer() {
   try {
     const conn = await amqp.connect(RABBITMQ_URL);
     const channel = await conn.createChannel();
-    
+
     await channel.assertQueue(QUEUE_NAME, { durable: true });
     console.log(`🔍 Escuchando cola "${QUEUE_NAME}"...`);
 
     channel.consume(QUEUE_NAME, async (msg) => {
       if (msg) {
-        const imageBase64 = msg.content.toString();
+        const messageContent = JSON.parse(msg.content.toString());
+        const imageBase64 = messageContent.base64;
+        const token = messageContent.token;
         console.log('📥 Mensaje recibido (', msg.content.length, 'bytes)');
 
-        const iaResponse = await sendToIA(imageBase64);
-        
+        const iaResponse = await sendToIA(imageBase64, token);
+
         if (iaResponse) {
           console.log('🤖 Respuesta IA:', {
             match: iaResponse.match ? '✅ COINCIDENCIA' : '❌ NO COINCIDE',
